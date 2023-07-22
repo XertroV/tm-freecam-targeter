@@ -117,6 +117,7 @@ void DrawOptions() {
         cam.m_Roll = 0;
         FreeCamSetTargetId(cam, 0, false);
     }
+    AddSimpleTooltip("If it repeatedly gets stuck, manually target something with alt + left click in cam7 and try again.");
 #if SIG_DEVELOPER
     if (UI::Button(Icons::Cube + " Explore FreeCam Controls Nod")) {
         ExploreNod("FreeCam Controls", cam);
