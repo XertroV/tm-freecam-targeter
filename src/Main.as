@@ -21,10 +21,10 @@ void Render() {
     if (!S_Enabled) return;
     // if (!ShowWindow) return;
 
-    UI::SetNextWindowSize(300, 400, UI::Cond::Appearing);
+    UI::SetNextWindowSize(400, 430, UI::Cond::FirstUseEver);
     if (UI::Begin(MenuName, S_Enabled, UI::WindowFlags::NoCollapse)) {
         auto app = GetApp();
-        if (app.CurrentPlayground is null) {
+        if (app.CurrentPlayground is null || app.GameScene is null) {
             UI::Text("Please load a map.");
             UI::End();
             return;
@@ -91,6 +91,38 @@ void DrawOptions() {
     S_FollowVAngle = UI::SliderFloat("Follow V Angle", S_FollowVAngle, -90., 90.0, "%.1f");
     S_FollowFov = UI::SliderFloat("Follow FoV", S_FollowFov, 10., 150.0, "%.1f");
     S_FollowOffset = UI::SliderFloat3("Follow Offset (x,y,z)", S_FollowOffset, -10., 10., "%.1f");
+
+    auto cam = GetFreeCamControls(GetApp());
+    if (cam is null) return;
+
+    UI::Separator();
+
+    cam.m_TargetIsEnabled = UI::Checkbox("TargetIsEnabled", cam.m_TargetIsEnabled);
+    cam.m_TargetPos = UI::InputFloat3("Target Position", cam.m_TargetPos);
+    cam.m_FreeVal_Loc_Translation = UI::InputFloat3("Non-target Position", cam.m_FreeVal_Loc_Translation);
+    cam.m_Fov = UI::SliderFloat("FoV", cam.m_Fov, 10., 150., "%.1f");
+    UI::Text("Pos: " + cam.Pos.ToString());
+    // cam.m_Pitch = UI::SliderFloat("Pitch", cam.m_Pitch, 10., 150., "%.1f");
+    // cam.m_Yaw = UI::SliderFloat("Yaw", cam.m_Yaw, 10., 150., "%.1f");
+    // cam.m_Roll = UI::SliderFloat("Roll", cam.m_Roll, 10., 150., "%.1f");
+
+    UI::Separator();
+
+    if (UI::Button("Reset FreeCam (if it gets stuck)")) {
+        cam.m_TargetPos = vec3(500, 80, 500);
+        cam.m_FreeVal_Loc_Translation = vec3(500, 80, 500);
+        cam.m_Radius = 30.;
+        cam.m_Pitch = 0;
+        cam.m_Yaw = 0;
+        cam.m_Roll = 0;
+        FreeCamSetTargetId(cam, 0, false);
+    }
+#if SIG_DEVELOPER
+    if (UI::Button(Icons::Cube + " Explore FreeCam Controls Nod")) {
+        ExploreNod("FreeCam Controls", cam);
+    }
+    AddSimpleTooltip("Warning: don't keep this tab open when you leave the map! It can crash the game.");
+#endif
 }
 
 
@@ -143,6 +175,7 @@ uint visIdToLoad;
 
 void DrawListGhosts() {
     auto mgr = GhostClipsMgr::Get(GetApp());
+    if (mgr is null) return;
     UI::ListClipper clip(mgr.Ghosts.Length);
     while (clip.Step()) {
         for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
@@ -291,4 +324,13 @@ void SetCamChoice(CamChoice cam) {
     SetAltCamFlag(app, alt);
     SetDrivableCamFlag(app, drivable);
     SetCamType(app, setTo);
+}
+
+shared void AddSimpleTooltip(const string &in msg) {
+    if (UI::IsItemHovered()) {
+        UI::SetNextWindowSize(400, 0, UI::Cond::Appearing);
+        UI::BeginTooltip();
+        UI::TextWrapped(msg);
+        UI::EndTooltip();
+    }
 }
