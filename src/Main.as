@@ -68,8 +68,13 @@ void DrawAbout() {
     UI::TextWrapped("\\$888" + debugText);
 }
 
+enum FollowMethod { TargetMode_JustYaw, TargetMode_JustPitchYaw, Locked_PitchYawRoll, XXX_Last }
+
 [Setting hidden]
 bool S_FollowWhenTargeted = false;
+
+[Setting hidden]
+FollowMethod S_FollowMethod = FollowMethod::TargetMode_JustPitchYaw;
 
 [Setting hidden]
 float S_FollowDist = 15.0;
@@ -78,19 +83,50 @@ float S_FollowDist = 15.0;
 float S_FollowVAngle = 20;
 
 [Setting hidden]
-vec3 S_FollowOffset = vec3(0, 2, 0);
+float S_FollowFov = 75;
+
+[Setting hidden]
+vec3 S_FollowOffset = vec3(0, 2, 2);
 
 void DrawOptions() {
     S_FollowWhenTargeted = UI::Checkbox("Lock Camera to Target", S_FollowWhenTargeted);
+    S_FollowMethod = DrawComboFollowMethod("Follow Method", S_FollowMethod);
     S_FollowDist = UI::SliderFloat("Follow Distance", S_FollowDist, 1.0, 100.0, "%.1f");
     S_FollowVAngle = UI::SliderFloat("Follow V Angle", S_FollowVAngle, -90., 90.0, "%.1f");
+    S_FollowFov = UI::SliderFloat("Follow FoV", S_FollowFov, 10., 150.0, "%.1f");
     S_FollowOffset = UI::SliderFloat3("Follow Offset (x,y,z)", S_FollowOffset, -10., 10., "%.1f");
 }
 
 
+
+shared funcdef string EnumToStringF(int);
+
+shared int DrawArbitraryEnum(const string &in label, int val, int nbVals, EnumToStringF@ eToStr) {
+    if (UI::BeginCombo(label, eToStr(val))) {
+        for (int i = 0; i < nbVals; i++) {
+            if (UI::Selectable(eToStr(i), val == i)) {
+                val = i;
+            }
+        }
+        UI::EndCombo();
+    }
+    return val;
+}
+FollowMethod DrawComboFollowMethod(const string &in label, FollowMethod val) {
+    return FollowMethod(
+        DrawArbitraryEnum(label, int(val), int(FollowMethod::XXX_Last), function(int v) {
+            return tostring(FollowMethod(v));
+        })
+    );
+}
+
+
+
+
+
 void DrawListPlayers() {
-    CSmPlayer@ player;
     auto cp = cast<CSmArenaClient>(GetApp().CurrentPlayground);
+    if (cp is null) return;
     UI::ListClipper clip(cp.Players.Length);
     while (clip.Step()) {
         for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
@@ -129,10 +165,8 @@ void DrawListGhosts() {
 
 void RunSetFreeCamTargetToChosen() {
     auto status = GetCameraStatus();
-    if (status.currCam != uint(CameraType::FreeCam)) {
-        SetCamChoice(CamChoice::Cam7);
-        yield();
-    }
+    SetCamChoice(CamChoice::Cam7);
+    yield();
     auto cam = GetFreeCamControls(GetApp());
     if (cam is null) {
         UI::ShowNotification("Failed to get camera free :(");
@@ -155,44 +189,50 @@ void FollowCamTargetLoop() {
     try {
         auto cam = GetFreeCamControls(GetApp());
         while (S_FollowWhenTargeted && (@cam = GetFreeCamControls(GetApp())) !is null) {
-            cam.m_TargetIsEnabled = false;
+            /**
+             * Hmm, wrt angles:
+             * while in drivable cam7, we cannot update the free cam outside of target mode (then just PY)
+             * while in nondrivable cam7, target mode: only PY, non-target: PYR
+             */
+            cam.m_TargetIsEnabled = S_FollowMethod < FollowMethod::Locked_PitchYawRoll;
+            cam.m_RelativeFollowedPos = S_FollowOffset;
             cam.m_ClampPitch = false;
+            cam.m_Fov = S_FollowFov;
             debugText = "";
             auto visId = FreeCamGetTargetId(cam);
             lastVisIdFollowing = visId;
             auto vis = FindVisById(visId);
-            cam.m_TargetPos = vis.AsyncState.Position;
             cam.m_RelativeFollowedPos = S_FollowOffset;
             cam.m_Radius = S_FollowDist;
-            // vis.AsyncState.WorldCarUp;
-            // vis.AsyncState.WorldVel;
             debugText += vis.AsyncState.Left.ToString() + "\n" + vis.AsyncState.Up.ToString() + "\n" + vis.AsyncState.Dir.ToString();
-            auto rotExtra = mat4::Inverse(mat4::Rotate(Math::ToRad(S_FollowVAngle), vis.AsyncState.Left));
+            auto rotExtra = (mat4::Rotate(Math::ToRad(S_FollowVAngle), vis.AsyncState.Left));
             // auto rotExtra = mat4::Identity();
             auto camDir = (rotExtra * vis.AsyncState.Dir).xyz;
             auto camUp = (rotExtra * vis.AsyncState.Up).xyz;
             auto left = vis.AsyncState.Left;
             auto rot = mat4(
-                // vec4(left.x, camUp.x, camDir.x, 0),
-                // vec4(left.y, camUp.y, camDir.z, 0),
-                // vec4(left.z, camUp.z, camDir.y, 0),
                 vec4(left, 0),
                 vec4(camUp, 0),
                 vec4(camDir, 0),
                 vec4(0, 0, 0, 1)
             );
+            auto targetPos = vis.AsyncState.Position + (rot * S_FollowOffset).xyz;
+            cam.m_TargetPos = targetPos;
             // auto camAngles = DirToAngles(camDir, camUp, vis.AsyncState.Left);
-            auto pos = vis.AsyncState.Position + camDir * S_FollowDist * -1.;
+            auto pos = targetPos + camDir * S_FollowDist * -1.;
             auto camAngles = PitchYawRollFromRotationMatrix(rot);
-            // cam.m_Pitch = 0.2;
-            cam.m_Pitch = camAngles.x + 0.05; // + Math::ToRad(S_FollowVAngle);
-            // cam.m_Pitch *= -1.;
+
+            if (S_FollowMethod > FollowMethod::TargetMode_JustYaw) {
+                cam.m_Pitch = Math::Abs(camAngles.x);
+                if (S_FollowMethod > FollowMethod::TargetMode_JustPitchYaw) {
+                    cam.m_Pitch = camAngles.x;
+                    cam.m_Roll = camAngles.z;
+                }
+            }
             cam.m_Yaw = camAngles.y;
-            // cam.m_Yaw *= -1.;
-            cam.m_Roll = camAngles.z;
             cam.m_FreeVal_Loc_Translation = pos;
-            nvg::Reset();
-            nvgDrawCoordHelpers(vis.AsyncState.Position, vis.AsyncState.Left, vis.AsyncState.Up, vis.AsyncState.Dir);
+            // nvg::Reset();
+            // nvgDrawCoordHelpers(vis.AsyncState.Position, vis.AsyncState.Left, vis.AsyncState.Up, vis.AsyncState.Dir);
             yield();
         }
     } catch {
@@ -251,7 +291,7 @@ CSceneVehicleVis@ FindVisById(uint visId) {
 
 void SetCamChoice(CamChoice cam) {
     bool alt = cam == CamChoice::Cam1Alt || cam == CamChoice::Cam2Alt || cam == CamChoice::Cam3Alt;
-    bool drivable = cam != CamChoice::Cam7;
+    bool drivable = cam == CamChoice::Cam7Drivable;
     CameraType setTo = cam == CamChoice::Cam1 || cam == CamChoice::Cam1Alt
         ? CameraType::Cam1
         : cam == CamChoice::Cam2 || cam == CamChoice::Cam2Alt
@@ -259,7 +299,7 @@ void SetCamChoice(CamChoice cam) {
             : cam == CamChoice::Cam3 || cam == CamChoice::Cam3Alt
                 ? CameraType::Cam3
                 : cam == CamChoice::Cam7 || cam == CamChoice::Cam7Drivable
-                    ? CameraType::FreeCam
+                    ? CameraType::WeirdDefault
                     : cam == CamChoice::CamBackwards
                         ? CameraType::Backwards
                         : CameraType::Cam1

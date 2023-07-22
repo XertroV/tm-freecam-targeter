@@ -35,7 +35,7 @@ void SetAltCamFlag(CGameCtnApp@ app, bool isAlt) {
 void SetDrivableCamFlag(CGameCtnApp@ app, bool canDrive) {
     auto gt = GetGameTerminal(app);
     if (gt is null) return;
-    Dev::SetOffset(gt, 0x60, canDrive ? 0x1 : 0x0);
+    Dev::SetOffset(gt, 0x60, canDrive ? 0x0 : 0x1);
 }
 
 // crashes on 0x8, 0x9, and 0x1e or greater
