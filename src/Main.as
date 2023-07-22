@@ -68,10 +68,7 @@ void DrawAbout() {
     UI::TextWrapped("\\$888" + debugText);
 }
 
-enum FollowMethod { TargetMode_JustYaw, TargetMode_JustPitchYaw, Locked_PitchYawRoll, XXX_Last }
-
-[Setting hidden]
-bool S_FollowWhenTargeted = false;
+enum FollowMethod { Target_Only, TargetMode_JustYaw, TargetMode_JustPitchYaw, Locked_PitchYawRoll, XXX_Last }
 
 [Setting hidden]
 FollowMethod S_FollowMethod = FollowMethod::TargetMode_JustPitchYaw;
@@ -89,7 +86,6 @@ float S_FollowFov = 75;
 vec3 S_FollowOffset = vec3(0, 2, 2);
 
 void DrawOptions() {
-    S_FollowWhenTargeted = UI::Checkbox("Lock Camera to Target", S_FollowWhenTargeted);
     S_FollowMethod = DrawComboFollowMethod("Follow Method", S_FollowMethod);
     S_FollowDist = UI::SliderFloat("Follow Distance", S_FollowDist, 1.0, 100.0, "%.1f");
     S_FollowVAngle = UI::SliderFloat("Follow V Angle", S_FollowVAngle, -90., 90.0, "%.1f");
@@ -188,7 +184,7 @@ void FollowCamTargetLoop() {
     followLoopRunning = true;
     try {
         auto cam = GetFreeCamControls(GetApp());
-        while (S_FollowWhenTargeted && (@cam = GetFreeCamControls(GetApp())) !is null) {
+        while ((@cam = GetFreeCamControls(GetApp())) !is null) {
             /**
              * Hmm, wrt angles:
              * while in drivable cam7, we cannot update the free cam outside of target mode (then just PY)
@@ -218,10 +214,12 @@ void FollowCamTargetLoop() {
             );
             auto targetPos = vis.AsyncState.Position + (rot * S_FollowOffset).xyz;
             cam.m_TargetPos = targetPos;
-            // auto camAngles = DirToAngles(camDir, camUp, vis.AsyncState.Left);
             auto pos = targetPos + camDir * S_FollowDist * -1.;
             auto camAngles = PitchYawRollFromRotationMatrix(rot);
 
+            if (S_FollowMethod > FollowMethod::Target_Only) {
+                cam.m_Yaw = camAngles.y;
+            }
             if (S_FollowMethod > FollowMethod::TargetMode_JustYaw) {
                 cam.m_Pitch = Math::Abs(camAngles.x);
                 if (S_FollowMethod > FollowMethod::TargetMode_JustPitchYaw) {
@@ -229,7 +227,6 @@ void FollowCamTargetLoop() {
                     cam.m_Roll = camAngles.z;
                 }
             }
-            cam.m_Yaw = camAngles.y;
             cam.m_FreeVal_Loc_Translation = pos;
             // nvg::Reset();
             // nvgDrawCoordHelpers(vis.AsyncState.Position, vis.AsyncState.Left, vis.AsyncState.Up, vis.AsyncState.Dir);
@@ -262,20 +259,6 @@ shared vec3 PitchYawRollFromRotationMatrix(mat4 m) {
 }
 
 
-vec3 DirToAngles(vec3 dir, vec3 up, vec3 left) {
-    vec3 e = vec3();
-    e.z = Math::Asin( - Math::Clamp( up.x, -1.0, 1.0 ) );
-    if ( Math::Abs( up.x ) < 0.9999999 ) {
-        e.x = Math::Atan2( up.z, up.y );
-        e.y = Math::Atan2( dir.x, left.x );
-    } else {
-        e.x = Math::Atan2( - dir.y, dir.z );
-        e.y = 0;
-    }
-    return e * -1.;
-
-}
-
 CSceneVehicleVis@ FindVisById(uint visId) {
     auto gs = GetApp().GameScene;
     // NSceneVehicleVis_SMgr@ mgr = Dev::ForceCast<NSceneVehicleVis_SMgr@>(Dev::GetOffsetNod(gs, 0x70)).Get();
@@ -299,7 +282,7 @@ void SetCamChoice(CamChoice cam) {
             : cam == CamChoice::Cam3 || cam == CamChoice::Cam3Alt
                 ? CameraType::Cam3
                 : cam == CamChoice::Cam7 || cam == CamChoice::Cam7Drivable
-                    ? CameraType::WeirdDefault
+                    ? CameraType::FreeCam
                     : cam == CamChoice::CamBackwards
                         ? CameraType::Backwards
                         : CameraType::Cam1
