@@ -6,6 +6,9 @@ void OnDisabled() { OnDestroyed(); }
 const string PluginIcon = Icons::Car + Icons::Crosshairs;
 const string MenuName = PluginIcon + "\\$z " + Meta::ExecutingPlugin().Name;
 
+[Setting hidden]
+bool S_Enabled = false;
+
 /** Render function called every frame intended only for menu items in `UI`.
 */
 void RenderMenu() {
@@ -65,7 +68,7 @@ void DrawAbout() {
     UI::TextWrapped("In normal mode: alt + left click to target a player/ghost. alt + right click to exit targeted mode.");
     UI::Separator();
     UI::TextWrapped("\\$888Following Vis ID: " + Text::Format("%08x", lastVisIdFollowing));
-    UI::TextWrapped("\\$888" + debugText);
+    // UI::TextWrapped("\\$888" + debugText);
 }
 
 enum FollowMethod { Target_Only, TargetMode_JustYaw, TargetMode_JustPitchYaw, Locked_PitchYawRoll, XXX_Last }
@@ -193,8 +196,17 @@ void DrawListGhosts() {
     }
 }
 
+enum CamChoice {
+    Cam1, Cam1Alt,
+    Cam2, Cam2Alt,
+    Cam3, Cam3Alt,
+    Cam7, Cam7Drivable,
+    CamBackwards,
+}
+
+
 void RunSetFreeCamTargetToChosen() {
-    auto status = GetCameraStatus();
+    // auto status = GetCameraStatus();
     SetCamChoice(CamChoice::Cam7);
     yield();
     auto cam = GetFreeCamControls(GetApp());
