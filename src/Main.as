@@ -1,6 +1,62 @@
+Dev::HookInfo@ g_hook;
+
+auto startTime = Time::Now;
+
 void Main() {
+    MLHook::RegisterPlaygroundMLExecutionPointCallback(onMLExec);
+    startnew(loopSetShadows).WithRunContext(Meta::RunContext::NetworkAfterMainLoop);
+    // startnew(onBeforeScripts).WithRunContext(Meta::RunContext::BeforeScripts);
+    // startnew(onAfterScripts).WithRunContext(Meta::RunContext::AfterScripts);
+    // startnew(onGameLoop).WithRunContext(Meta::RunContext::GameLoop);
+    // startnew(onSceneUpdate).WithRunContext(Meta::RunContext::UpdateSceneEngine);
+    // startnew(onMain).WithRunContext(Meta::RunContext::Main);
+    // startnew(onAfterMainLoop).WithRunContext(Meta::RunContext::AfterMainLoop);
+    // startnew(onMainLoop).WithRunContext(Meta::RunContext::MainLoop);
+    // startnew(onNetworkAfterMainLoop).WithRunContext(Meta::RunContext::NetworkAfterMainLoop);
+
+    auto app = cast<CTrackMania>(GetApp());
+
+    return;
+
+// 48 8B 46 28 4D 8D 76 08 48 8B 88 60060000 49 8B 44 0E F8 0F10 80 80010000 0F10 88 90010000 0F11 80 A0010000 0F11 88 B0010000 48 83 EA 01 75 CA 8B 54 24 50 48 8D 4C 24 40 E8 0CDDE9FE 48 83 C4 78 41 5E 5E
+    // end of AfterPhsyics
+    // auto pattern = "48 8D 4C 24 40 E8 0C DD E9 FE 48 83 C4 78 41 5E 5E";
+    // CSmArenaClient::UpdatePhysics
+    // auto pattern = "40 55 57 41 54 41 55 41 56 48 8D AC 24 70 FE FF FF 48 81 EC 90 02 00 00";
+    // UpdatePlayersInputs -- didn't work
+    // Players_EndFrame
+    // auto pattern = "44 89 44 24 18 56 41 56 48 83 EC 78 48 8B F1 4C 89 6C 24 68 44 8B EA 48 8D 4C 24 40 45 33 F6";
+    // NScenePys::StartFrame
+    // auto pattern = "40 55 48 83 EC 40 48 89 5C 24 50 48 8B E9 48 8B DA 48 89 7C 24 60 33 FF";
+    // UpdateAsync_PostCameraVisibility -- start and end -> crashes
+    // auto pattern = "8B 55 90 48 8D 4D 80 E8 ?? ?? ?? ?? 48 8B 4D B0 48 33 CC";
+    // Update2_AfterAnim
+    // auto pattern = "4C 8B DC 55 41 56 49 8D AB 68 FC FF FF 48 81 EC 88 04 00 00";
+    // Update2_AfterAnim in for loop
+    auto pattern = "49 39 79 08 74 19 45 3B FB 0F 83 ?? ?? ?? ?? 41 FF C7 44 89 7C 24 74 41 8D 47 FF 4C 89 0C";
+    auto ptr = Dev::FindPattern(pattern);
+    print(Text::FormatPointer(ptr));
+    @g_hook = Dev::Hook(ptr, 1, "AfterPhysics", Dev::PushRegisters::SSE);
+
+    while (Time::Now - startTime < 1000) {
+        yield();
+        print('Main ' + Time::Now);
+    }
 }
-void OnDestroyed() { }
+
+void AfterPhysics(uint64 r9) {
+    if (Time::Now - startTime > 1000) return;
+    print('AfterPhysics ' + GetApp().TimeSinceInitMs);
+    print('r9: ' + Text::FormatPointer(r9));
+    IO::SetClipboard(Text::FormatPointer(r9));
+}
+
+void OnDestroyed() {
+    MLHook::UnregisterMLHooksAndRemoveInjectedML();
+    visIdToLoad = 0;
+    if (g_hook !is null)
+        Dev::Unhook(g_hook);
+}
 void OnDisabled() { OnDestroyed(); }
 
 const string PluginIcon = Icons::Car + Icons::Crosshairs;
@@ -69,6 +125,9 @@ void DrawAbout() {
     UI::Separator();
     UI::TextWrapped("\\$888Following Vis ID: " + Text::Format("%08x", lastVisIdFollowing));
     // UI::TextWrapped("\\$888" + debugText);
+    if (UI::Button("Reset")) {
+        visIdToLoad = 0;
+    }
 }
 
 enum FollowMethod { Target_Only, TargetMode_JustYaw, TargetMode_JustPitchYaw, Locked_PitchYawRoll, XXX_Last }
@@ -164,7 +223,7 @@ void DrawListPlayers() {
         for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
             auto player = cast<CSmPlayer>(cp.Players[i]);
             auto visId = Dev::GetOffsetUint32(player, GetOffset(player, "EdClan") + 0x4c);
-            bool noVis = visId == 0x0FF00000 || player.SpawnIndex < 0;
+            bool noVis = visId == 0x0FF00000; // || player.SpawnIndex < 0;
             UI::BeginDisabled(noVis);
             if (UI::Button("" + i + ". ["+Text::Format("%08x", visId)+"] " + player.ScriptAPI.User.Name)) {
                 visIdToLoad = visId;
@@ -193,6 +252,126 @@ void DrawListGhosts() {
             }
             UI::EndDisabled();
         }
+    }
+}
+
+
+
+// GetPerformance
+uint logged = 0;
+void onMLExec(ref@ p) {
+        auto vp = GetApp().Viewport;
+        vp.RenderShadows = 0;
+
+    if (logged < 2) {
+        logged++;
+        trace('onMLExec ' + Time::Now);
+    }
+    SetCameraVisIdTarget();
+}
+
+void onBeforeScripts() {
+    while (true) {
+        callbackLog("onBeforeScripts");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onAfterScripts() {
+    while (true) {
+        callbackLog("onAfterScripts");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onSceneUpdate() {
+    while (true) {
+        callbackLog("onSceneUpdate");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onMain() {
+    while (true) {
+        callbackLog("onMain");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onGameLoop() {
+    while (true) {
+        callbackLog("onGameLoop");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onAfterMainLoop() {
+    while (true) {
+        callbackLog("onAfterMainLoop");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+void onMainLoop() {
+    while (true) {
+        callbackLog("onMainLoop");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+
+void loopSetShadows() {
+    while (true) {
+        yield();
+        auto vp = GetApp().Viewport;
+        vp.RenderShadows = 0;
+    }
+}
+void onNetworkAfterMainLoop() {
+    while (true) {
+        callbackLog("onNetworkAfterMainLoop");
+        yield();
+        SetCameraVisIdTarget();
+    }
+}
+
+Json::Value@ namedCbCounter = Json::Object();
+void callbackLog(const string &in name) {
+    int count = namedCbCounter.Get(name, 0);
+    if (count < 3) {
+        trace(tostring(Time::Now) + " Callback Context: " + name);
+        namedCbCounter[name] = count + 1;
+    }
+}
+
+void SetCameraVisIdTarget() {
+    CMwNod@ gamecam;
+    if (visIdToLoad > 0 && visIdToLoad != 0x0FF00000 && (@gamecam = GetGameCameraNod(GetApp())) !is null) {
+        // vehicle id for drawing (shadows; not setting this makes player invis)
+        Dev::SetOffset(gamecam, 0x44, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x44 + 0x18, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x44 + 0x98, visIdToLoad);
+
+        // these changed
+        // vehicle id to target
+        // Dev::SetOffset(gamecam, 0x48, visIdToLoad);
+        // vehicle id something to do with motion blur calcs or something
+        // Dev::SetOffset(gamecam, 0x4c, visIdToLoad);
+
+
+
+        // these are all vehicle ent ids, but don't seem to do much
+        // Dev::SetOffset(gamecam, 0xc4, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x2a0, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x29c, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x5a0, visIdToLoad);
+        // Dev::SetOffset(gamecam, 0x59c, visIdToLoad);
+
+        // auto forcedCam = Dev::GetOffsetNod(gamecam, 0xd0);
+        // if (forcedCam !is null)
+        //     Dev::SetOffset(forcedCam, 0x0, visIdToLoad);
+    } else {
+        visIdToLoad = 0;
     }
 }
 
